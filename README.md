@@ -11,7 +11,7 @@ This project focuses on analyzing global email marketing data using **Google Big
 ## 🛠 Tech Stack
 - **Database:** Google BigQuery (SQL)
 - **BI Tool:** Looker Studio
-- **Data Transformation:** SQL CTEs, Window Functions, and Unpivot operations.
+- **Data Transformation:** SQL CTEs, Window Functions, Unpivot operations.
 
 ## 💡 Technical Deep Dive: Why UNPIVOT?
 To make the dashboard scalable and efficient, I implemented the `UNPIVOT` operator. This transformed multiple metric columns into a **Long Format**, allowing:
