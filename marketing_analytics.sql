@@ -1,7 +1,6 @@
 
--- STEP 1: Combine subscriber data and email activity metrics
 WITH combined_data AS (
-    -- Sub-step A: Aggregate Account Registrations by Date and Country
+    -- Step 1A: Get new account registrations by date and market
     SELECT
         s.date,
         sp.country,
@@ -16,11 +15,11 @@ WITH combined_data AS (
     JOIN `DA.account_session` acs ON acs.account_id = ac.id
     JOIN `DA.session_params` sp ON sp.ga_session_id = acs.ga_session_id
     JOIN `DA.session` s ON s.ga_session_id = sp.ga_session_id
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1,2,3,4,5
 
     UNION ALL
 
-    -- Sub-step B: Aggregate Email Engagement (Sent, Open, Visit)
+    -- Step 1B: Get email interaction funnel (Sent -> Open -> Visit)
     SELECT
         DATE_ADD(s.date, INTERVAL es.sent_date DAY) AS sent_date,
         sp.country,
@@ -38,27 +37,46 @@ WITH combined_data AS (
     JOIN `DA.account_session` acs ON acs.account_id = es.id_account
     JOIN `DA.session` s ON s.ga_session_id = acs.ga_session_id
     JOIN `DA.session_params` sp ON sp.ga_session_id = s.ga_session_id
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1,2,3,4,5
 ),
 
--- STEP 2: Calculate Global Market Ranking and Totals
+-- Step 2: Post-Union Aggregation
+-- Aggregating metrics at the country/date level to ensure data integrity
+-- and eliminate duplicate rows generated during the UNION ALL process.
 final_data AS (
+    SELECT 
+        date,
+        country,
+        send_interval,
+        is_verified,
+        is_unsubscribed,
+        SUM(account_cnt) AS account_cnt,
+        SUM(sent_msg) AS sent_msg,
+        SUM(open_msg) AS open_msg,
+        SUM(visit_msg) AS visit_msg
+    FROM combined_data
+    GROUP BY 1,2,3,4,5
+),
+
+-- Step 3: Global Ranking Logic
+-- Identifying Top 10 markets by total accounts and total sent messages 
+-- using Window Functions to enable filtering of the global long-tail.
+ranked_data AS (
     SELECT *,
-        -- Calculate rank based on total accounts per country
-        DENSE_RANK() OVER (ORDER BY total_country_account_cnt DESC) AS rank_total_country_account_cnt,
-        -- Calculate rank based on total emails sent per country
-        DENSE_RANK() OVER (ORDER BY total_country_sent_cnt DESC) AS rank_total_country_sent_cnt
+      DENSE_RANK() OVER (ORDER BY total_country_account_cnt DESC) AS rank_total_country_account_cnt,
+      DENSE_RANK() OVER (ORDER BY total_country_sent_cnt DESC) AS rank_total_country_sent_cnt
     FROM (
-        SELECT *,
-            -- Sum metrics at the country level using Window Functions
-            SUM(account_cnt) OVER (PARTITION BY country) AS total_country_account_cnt,
-            SUM(sent_msg) OVER (PARTITION BY country) AS total_country_sent_cnt
-        FROM combined_data
+      SELECT *,
+        SUM(account_cnt) OVER (PARTITION BY country) AS total_country_account_cnt,
+        SUM(sent_msg) OVER (PARTITION BY country) AS total_country_sent_cnt
+      FROM final_data 
     )
 )
 
--- STEP 3: Normalize data for BI visualization and filter Top 10 markets
-SELECT 
+-- Step 4: Final Normalization (UNPIVOT)
+-- Transforming metrics from columns to rows to allow dynamic metric selection 
+-- and efficient data handling in the Looker Studio dashboard.
+SELECT
     date,
     country,
     send_interval,
@@ -70,11 +88,9 @@ SELECT
     rank_total_country_sent_cnt,
     metric_name,
     metric_value
-FROM final_data
--- Pivot metrics from columns to rows for flexible filtering in Looker Studio
+FROM ranked_data
 UNPIVOT(
     metric_value FOR metric_name IN (account_cnt, sent_msg, open_msg, visit_msg)
 )
--- Filter to include only top-performing countries to reduce noise in charts
-WHERE rank_total_country_account_cnt <= 10 
+WHERE rank_total_country_account_cnt <= 10
    OR rank_total_country_sent_cnt <= 10;
