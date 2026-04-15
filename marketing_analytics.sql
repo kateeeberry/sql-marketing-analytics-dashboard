@@ -77,17 +77,7 @@ ranked_data AS (
 -- Transforming metrics from columns to rows to allow dynamic metric selection 
 -- and efficient data handling in the Looker Studio dashboard.
 SELECT
-    date,
-    country,
-    send_interval,
-    is_verified,
-    is_unsubscribed,
-    total_country_account_cnt,
-    total_country_sent_cnt,
-    rank_total_country_account_cnt,
-    rank_total_country_sent_cnt,
-    metric_name,
-    metric_value
+    *
 FROM ranked_data
 UNPIVOT(
     metric_value FOR metric_name IN (account_cnt, sent_msg, open_msg, visit_msg)
